@@ -1,0 +1,1041 @@
+{
+  "name": "Customer Support AI Agent Platform",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer Support Request:\n\nCustomer name and email: {{ $json['Name '] }} - {{ $json.Email }}\nTicket ID: {{ $json.ID }}\n\nMessage:\n{{ $json.Message }}",
+        "options": {
+          "systemMessage": "=<system_prompt>\nYOU ARE A CERTIFIED CUSTOMER SUPPORT SPECIALIST REPRESENTING CONNECT SOFTWARE — A LEADER IN ENTERPRISE SOLUTIONS. YOUR RESPONSIBILITY IS TO WRITE CUSTOMER RESPONSES. DO NOT INCLUDE SUBJECT LINES UNDER ANY CIRCUMSTANCES.\n\nYOUR CORE MISSION:  \nDELIVER ACCURATE, PROFESSIONAL, AND CONCISE CUSTOMER SUPPORT RESPONSES USING EXCLUSIVELY THE OFFICIAL CONNECT SOFTWARE KNOWLEDGE BASE.\n\nABSOLUTE RULE: SOURCE OF TRUTH  \nYOU MUST ONLY RESPOND BASED ON THE CONTENT OF THE OFFICIAL CONNECT SOFTWARE DATABASE, DOCUMENTATION, AND INTERNAL GUIDES.  \n- DO NOT INVENT, ASSUME, OR GUESS INFORMATION  \n- EVERY RESPONSE MUST BE GROUNDED IN A CONFIRMED ENTRY FROM THE HELP CENTER, MANUALS, TRAINING VIDEOS, OR INTERNAL SUPPORT MATERIALS  \n- IF A QUERY FALLS OUTSIDE THIS DATABASE, YOU MUST ESCALATE\n\nCHAIN OF THOUGHT: HOW TO RESPOND  \n1. UNDERSTAND the customer’s question clearly  \n2. IDENTIFY whether the issue is feature-related, technical, or procedural  \n3. LOOK UP the precise information in the CONNECT SOFTWARE DATABASE  \n4. LOCATE the answer in official help center docs, guides, or videos  \n5. COMPOSE a precise, professional reply  \n6. ESCALATE IMMEDIATELY if the answer is NOT present in the database — DO NOT GUESS  \n7. RESPOND — NO subject lines, NO formatting, NO explanations\n\nRESPONSE FORMAT RULES  \n- DO NOT INCLUDE SUBJECT LINES  \n- USE THE CUSTOMER’S NAME IF PROVIDED  \n- ESCALATE IF THE DATABASE LACKS A DIRECT ANSWER  \n\nEXAMPLES (OUTPUT MUST BE EXACTLY AS BELOW)  \n\nExample - Direct Answer with Link:  \n\nHi Sarah, \n\nThank you for reaching out.  \n\nTo adjust the dashboard filters, please follow the steps in this article: [link to article]. \n\nIf the filters still do not appear as expected after following these steps, let me know and I’ll be happy to assist further.  \n\nBest regards, \n\nWilly  \nConnect Software Support\n\nExample - Escalation Required:  \n\nHi David,\n\nThank you for reporting this issue.  \n\nI will confirm the export behavior with our product team and get back to you as soon as possible. I’ve also logged your case internally for tracking.\n\nBest regards,\nWilly  \nConnect Software Support\n\nExample - Troubleshooting Steps:  \n\nHi Emily,\n\nThanks for your message. Please try the following steps:  \nClear your browser cache and cookies.\n\nEnsure you’re using a supported browser (Chrome, Firefox, or Edge).  \nTry logging in directly via this link: [login URL].  \n\nIf the issue continues, let me know and I’ll escalate it for further review.  \n\nBest regards, \n\nWilly  \nConnect Software Support\n\nWHAT NOT TO DO  \n- NEVER INVENT OR ASSUME INFORMATION OUTSIDE THE DATABASE  \n- NEVER RESPOND WITHOUT CONSULTING THE OFFICIAL CONNECT RESOURCES  \n- NEVER USE “Subject:” LINES  \n- NEVER USE FORMATTING SUCH AS HTML, MARKDOWN, OR CODE BLOCKS  \n- NEVER OMIT CUSTOMER NAMES IF GIVEN  \n- NEVER FAIL TO ESCALATE MISSING OR UNCLEAR CASES  \n- NEVER INCLUDE EMOJIS OR INFORMAL LANGUAGE  \n</system_prompt>"
+        }
+      },
+      "id": "95ce1ee4-cde7-4f0c-aa6c-04a89c4f0011",
+      "name": "Support AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        1768,
+        -370
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Normalize Gmail Data').item.json.customerEmail }}",
+        "subject": "=Re: {{ $('Normalize Gmail Data').item.json.subject }}",
+        "message": "={{ $('OpenAI').item.json.message.content }}",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "",
+          "ccList": "crmsupport@connected-performance.com, training@connected-performance.com, will.n@connected-performance.com, adam.vasil@connected-performance.com",
+          "replyTo": ""
+        }
+      },
+      "id": "948a3526-2ebd-4eba-a20e-1fd215aaebb4",
+      "name": "Send Gmail Response",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3764,
+        -120
+      ],
+      "webhookId": "2de80902-7852-4cda-98f4-c3fb187e55a3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "95IHUKq7gelP12du",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Save to Google Sheets1').item.json.Email }}",
+        "contextWindowLength": 50
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        1860,
+        -140
+      ],
+      "id": "2aa72e1a-dfb0-4e57-8861-13ed9365164d",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "Qn1VTxXHNAuO8lKe",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "use this for any inquiry, this is the COMPANY KNOWLEDGE BASE.",
+        "tableName": {
+          "__rl": true,
+          "value": "documents",
+          "mode": "list",
+          "cachedResultName": "documents"
+        },
+        "topK": 8,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1976,
+        -147.5
+      ],
+      "id": "06ec6fcb-4087-4b4b-ab74-c0888a776126",
+      "name": "Company Knowledge Base",
+      "credentials": {
+        "supabaseApi": {
+          "id": "fiTmuI6n2Qbuf892",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2064,
+        50
+      ],
+      "id": "9224efae-5939-48e1-b9db-7d79a722f1de",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C095F2Y3L0Z",
+          "mode": "list",
+          "cachedResultName": "connect-support"
+        },
+        "message": "=Answer: {{ $('Set post').item.json.post }}",
+        "responseType": "freeText",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2780,
+        -580
+      ],
+      "id": "8a88c451-82e7-4b75-8426-331a4f7119d7",
+      "name": "Slack1",
+      "webhookId": "1b83cef6-b745-4b6a-9fc8-eaf45b76f51e",
+      "credentials": {
+        "slackApi": {
+          "id": "ZaZUcb5Earc7HksD",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-NANO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=YOUR TASK IS TO RETURN ONLY THE RAW HTML TEXT OUTPUT FROM:  \n{{ $('Set post').item.json.post }}\n\n###OUTPUT REQUIREMENTS###\n\n- INCLUDE ONLY TEXTUAL CONTENT AND BASIC HTML FORMATTING TAGS THAT CONTROL SPACING AND VISUAL BREAKS:\n  - `<br>` for line breaks  \n  - `<p>` for paragraphs  \n  - `<hr>` for separators\n\n- DO NOT INCLUDE ANY STRUCTURAL TAGS SUCH AS:\n  - `<div>`, `<span>`, `<section>`, `<header>`, `<footer>`, `<main>`\n\n- RETURN ONLY THE RAW HTML TEXT — NO MARKDOWN, NO CODE BLOCKS, NO LABELS\n\n###WHAT NOT TO DO###\n\n- DO NOT WRAP THE OUTPUT IN MARKDOWN (e.g., triple backticks) ❌  \n- DO NOT ADD ANY TAGS BEYOND `<br>`, `<p>`, `<hr>` ❌  \n- DO NOT RETURN EXTRA LABELS LIKE \"HTML RESPONSE:\" ❌  \n- DO NOT OMIT LINE OR SPACE TAGS — THESE ARE CRUCIAL FOR EMAIL FORMATTING ✅  \n- DO NOT INCLUDE JAVASCRIPT, STYLE, OR META TAGS ❌\n\n###FINAL FORMAT###\n\n✅ OUTPUT EXAMPLE:\n<p>Hello John,</p><br> Thanks for your email.<br> We will get back to you shortly.<br><br> Best regards,<br> Support Team ```\n</system_prompt>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        3388,
+        -120
+      ],
+      "id": "0cf466e8-06fd-430c-a621-f900183b58b1",
+      "name": "OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C095F2Y3L0Z",
+          "mode": "list",
+          "cachedResultName": "connect-support"
+        },
+        "text": "=Client Email: {{ $('OpenAI1').item.json.message.content.message }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2560,
+        -580
+      ],
+      "id": "355c3d80-d20e-47e5-8d97-9ca2e0ddf0fe",
+      "name": "Slack2",
+      "webhookId": "4493671a-1505-4ede-9100-e0e69fa36501",
+      "credentials": {
+        "slackApi": {
+          "id": "ZaZUcb5Earc7HksD",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=I want you to change: {{ $json.data.text }}\nThis is the version to change: {{ $('Support AI Agent').item.json.output }}",
+        "options": {
+          "systemMessage": "<system_prompt>\nYOU ARE A CERTIFIED CUSTOMER SUPPORT SPECIALIST REPRESENTING CONNECT SOFTWARE — A LEADER IN ENTERPRISE SOLUTIONS. YOUR RESPONSIBILITY IS TO WRITE CUSTOMER RESPONSES. DO NOT INCLUDE SUBJECT LINES UNDER ANY CIRCUMSTANCES.\n\nYOUR CORE MISSION:  \nDELIVER ACCURATE, PROFESSIONAL, AND CONCISE CUSTOMER SUPPORT RESPONSES USING EXCLUSIVELY THE OFFICIAL CONNECT SOFTWARE KNOWLEDGE BASE.\n\nABSOLUTE RULE: SOURCE OF TRUTH  \nYOU MUST ONLY RESPOND BASED ON THE CONTENT OF THE OFFICIAL CONNECT SOFTWARE DATABASE, DOCUMENTATION, AND INTERNAL GUIDES.  \n- DO NOT INVENT, ASSUME, OR GUESS INFORMATION  \n- EVERY RESPONSE MUST BE GROUNDED IN A CONFIRMED ENTRY FROM THE HELP CENTER, MANUALS, TRAINING VIDEOS, OR INTERNAL SUPPORT MATERIALS  \n- IF A QUERY FALLS OUTSIDE THIS DATABASE, YOU MUST ESCALATE\n\nCHAIN OF THOUGHT: HOW TO RESPOND  \n1. UNDERSTAND the customer’s question clearly  \n2. IDENTIFY whether the issue is feature-related, technical, or procedural  \n3. LOOK UP the precise information in the CONNECT SOFTWARE DATABASE  \n4. LOCATE the answer in official help center docs, guides, or videos  \n5. COMPOSE a precise, professional reply  \n6. ESCALATE IMMEDIATELY if the answer is NOT present in the database — DO NOT GUESS  \n7. RESPOND — NO subject lines, NO formatting, NO explanations\n\nRESPONSE FORMAT RULES  \n- DO NOT INCLUDE SUBJECT LINES  \n- USE THE CUSTOMER’S NAME IF PROVIDED  \n- ESCALATE IF THE DATABASE LACKS A DIRECT ANSWER  \n\nEXAMPLES (OUTPUT MUST BE EXACTLY AS BELOW)  \n\nExample - Direct Answer with Link:  \n\nHi Sarah, \n\nThank you for reaching out.  \n\nTo adjust the dashboard filters, please follow the steps in this article: [link to article]. \n\nIf the filters still do not appear as expected after following these steps, let me know and I’ll be happy to assist further.  \n\nBest regards, \n\nWilly  \nConnect Software Support\n\nExample - Escalation Required:  \n\nHi David,\n\nThank you for reporting this issue.  \n\nI will confirm the export behavior with our product team and get back to you as soon as possible. I’ve also logged your case internally for tracking.\n\nBest regards,\nWilly  \nConnect Software Support\n\nExample - Troubleshooting Steps:  \n\nHi Emily,\n\nThanks for your message. Please try the following steps:  \nClear your browser cache and cookies.\n\nEnsure you’re using a supported browser (Chrome, Firefox, or Edge).  \nTry logging in directly via this link: [login URL].  \n\nIf the issue continues, let me know and I’ll escalate it for further review.  \n\nBest regards, \n\nWilly  \nConnect Software Support\n\nWHAT NOT TO DO  \n- NEVER INVENT OR ASSUME INFORMATION OUTSIDE THE DATABASE  \n- NEVER RESPOND WITHOUT CONSULTING THE OFFICIAL CONNECT RESOURCES  \n- NEVER USE “Subject:” LINES  \n- NEVER USE FORMATTING SUCH AS HTML, MARKDOWN, OR CODE BLOCKS  \n- NEVER OMIT CUSTOMER NAMES IF GIVEN  \n- NEVER FAIL TO ESCALATE MISSING OR UNCLEAR CASES  \n- NEVER INCLUDE EMOJIS OR INFORMAL LANGUAGE  \n</system_prompt>"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        3440,
+        -520
+      ],
+      "id": "5a0c4da0-e0b3-4248-a944-bab90a7d8b7f",
+      "name": "Revision Agent"
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.data.text }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "Approved",
+              "description": "<system_prompt> YOU ARE AN EMAIL VALIDATION AGENT TASKED WITH DETERMINING WHETHER A USER HAS **APPROVED** OR **NOT APPROVED** AN EMAIL BASED ON THEIR RESPONSE. YOUR OBJECTIVE IS TO ANALYZE USER REPLIES AND CLASSIFY THEM ACCURATELY AS EITHER AN **\"APPROVAL\"** OR A **\"NON-APPROVAL\"** ACCORDING TO THE CONTENT AND TONE OF THE MESSAGE.  ###INSTRUCTIONS###  - CLASSIFY A RESPONSE AS **APPROVED** IF:   - THE USER GIVES A **CLEARLY POSITIVE REPLY**, such as “Approved”, “Looks good”, “Thanks”, “Fine by me”   - THE USER PROVIDES **NO FEEDBACK OR OBJECTIONS**, with phrases like “No comments”, “All good”, “No changes needed”   - THE USER EXPRESSES **AGREEMENT OR ACCEPTANCE**, even implicitly, with phrases like “Okay”, “Confirmed”, “Sounds good”"
+            },
+            {
+              "category": "Not approved",
+              "description": "YOU ARE AN AGENT TASKED WITH DETERMINING WHETHER A USER HAS **APPROVED** OR **NOT APPROVED**CLASSIFY A RESPONSE AS **NOT APPROVED** IF:   - THE USER PROVIDES **ANY FEEDBACK, CRITICISM, OR REQUEST FOR CHANGE**   - THE USER EXPRESSES **UNCERTAINTY, HESITATION, OR CONDITIONAL ACCEPTANCE**, such as “Not sure”, “Needs work”, “Looks okay but…”   - THE USER STATES OR IMPLIES THAT THE EMAIL **DOES NOT YET MEET THEIR EXPECTATIONS**  - WHEN UNCERTAIN, DEFAULT TO **NOT APPROVED** TO MINIMIZE FALSE POSITIVES"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        3000,
+        -580
+      ],
+      "id": "ec47aa96-c9cd-4760-be6a-94794e70e3bf",
+      "name": "Text Classifier"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "281acaa8-5d3a-4d46-af20-46ba0fdfaa40",
+              "name": "post",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2352,
+        -370
+      ],
+      "id": "c44f0d79-fa03-4ea7-a51d-c4fba53191c8",
+      "name": "Set post"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "o4-mini",
+          "mode": "list",
+          "cachedResultName": "o4-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1736,
+        -150
+      ],
+      "id": "19b8da81-4ed4-4c7a-bc5d-7ca702e1bea2",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3100,
+        -225
+      ],
+      "id": "20b2c50a-5e29-4fc9-9e74-af6d161bc78f",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3476,
+        -300
+      ],
+      "id": "580c9190-1ca8-49e5-919d-4f5ee8572a2c",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-not-rejected",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "rejected-by-date",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fb357123-efda-46d1-876a-8de91e8d4eae",
+      "name": "Filter Date Approved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -270
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "date-rejected-status",
+              "name": "status",
+              "value": "rejected-by-date",
+              "type": "string"
+            },
+            {
+              "id": "date-rejected-reason",
+              "name": "reason",
+              "value": "={{ $json.reason }}",
+              "type": "string"
+            },
+            {
+              "id": "date-rejected-subject",
+              "name": "subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "date-rejected-email-date",
+              "name": "emailDate",
+              "value": "={{ $json.emailDate }}",
+              "type": "string"
+            },
+            {
+              "id": "date-rejected-cutoff",
+              "name": "cutoffDate",
+              "value": "={{ $json.cutoffDate }}",
+              "type": "string"
+            },
+            {
+              "id": "date-rejected-message-id",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e75c24f6-5a48-4354-8987-477d9af80b39",
+      "name": "Log Date Rejected",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        778,
+        -170
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -620,
+        -270
+      ],
+      "id": "75139926-0e32-4356-a9a8-6f755ea2258d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// This code processes the Gmail API response to extract individual emails\n// The HTTP Request returns a list of message IDs, we need to fetch each email's content\n\nconst response = $input.first().json;\nconst messages = response.messages || [];\n\nif (messages.length === 0) {\n  console.log('No emails found matching the search criteria');\n  return [];\n}\n\nconsole.log(`Found ${messages.length} emails`);\n\n// Return the message IDs for the next node to process\n// Note: You'll need additional HTTP Request nodes to fetch full email content\nreturn messages.map(message => ({\n  json: {\n    messageId: message.id,\n    threadId: message.threadId,\n    needsFullContent: true,\n    searchQuery: \"subject:(\\\"New support ticket\\\")\",\n    foundAt: new Date().toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        -270
+      ],
+      "id": "335c80ad-7f31-44eb-8a2d-98168a8059d7",
+      "name": "Process Message List"
+    },
+    {
+      "parameters": {
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.messageId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "full"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8e0f07b9-50c0-49d8-bb45-d99a9e9b1c59",
+      "name": "Get Full Email Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        40,
+        -270
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "95IHUKq7gelP12du",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process the full email content from Gmail API\nconst emailData = $input.first().json;\n\n// Extract headers\nconst headers = {};\nif (emailData.payload && emailData.payload.headers) {\n  emailData.payload.headers.forEach(header => {\n    headers[header.name.toLowerCase()] = header.value;\n  });\n}\n\n// Extract email body\nlet emailBody = '';\nfunction extractBody(payload) {\n  if (payload.body && payload.body.data) {\n    return Buffer.from(payload.body.data, 'base64').toString('utf-8');\n  }\n  \n  if (payload.parts) {\n    for (const part of payload.parts) {\n      if (part.mimeType === 'text/plain' && part.body && part.body.data) {\n        return Buffer.from(part.body.data, 'base64').toString('utf-8');\n      }\n    }\n    // If no plain text, try HTML\n    for (const part of payload.parts) {\n      if (part.mimeType === 'text/html' && part.body && part.body.data) {\n        return Buffer.from(part.body.data, 'base64').toString('utf-8');\n      }\n    }\n  }\n  \n  return '';\n}\n\nemailBody = extractBody(emailData.payload);\n\n// Extract key information\nconst messageId = emailData.id;\nconst subject = headers.subject || '';\nconst fromEmail = headers.from || '';\nconst emailDate = headers.date || '';\nconst threadId = emailData.threadId;\n\n// DATE FILTERING: Only process emails after July 11, 2025 2pm EST\nconst cutoffDate = new Date('2025-07-11T14:00:00-05:00');\nlet emailDateTime = null;\n\ntry {\n  emailDateTime = new Date(emailDate);\n  \n  if (emailDateTime < cutoffDate) {\n    console.log('=== EMAIL REJECTED BY DATE FILTER ===');\n    console.log(`Email Date: ${emailDateTime.toISOString()}`);\n    console.log(`Cutoff Date: ${cutoffDate.toISOString()}`);\n    console.log(`Subject: ${subject}`);\n    console.log(`Message ID: ${messageId}`);\n    console.log('=====================================');\n    \n    return [{\n      json: {\n        status: 'rejected-by-date',\n        reason: 'Email received before July 11, 2025 2pm EST',\n        emailDate: emailDateTime.toISOString(),\n        cutoffDate: cutoffDate.toISOString(),\n        subject: subject,\n        messageId: messageId,\n        rejectedAt: new Date().toISOString()\n      }\n    }];\n  }\n} catch (error) {\n  console.log(`Warning: Could not parse email date: ${emailDate}`);\n}\n\n// Create deduplication IDs\nconst primaryId = messageId;\nconst secondaryId = `${fromEmail}-${subject}-${emailDate}`.replace(/\\s+/g, '').substring(0, 100);\n\nconsole.log('=== PROCESSING INCOMING EMAIL (PASSED DATE FILTER) ===');\nconsole.log(`Message ID: ${messageId}`);\nconsole.log(`Subject: ${subject}`);\nconsole.log(`From: ${fromEmail}`);\nconsole.log(`Email Date: ${emailDateTime ? emailDateTime.toISOString() : emailDate}`);\nconsole.log(`Primary ID: ${primaryId}`);\nconsole.log('=============================================');\n\n// Return structured data\nreturn [{\n  json: {\n    primaryId: primaryId,\n    secondaryId: secondaryId,\n    messageId: messageId,\n    threadId: threadId,\n    subject: subject,\n    fromEmail: fromEmail,\n    emailDate: emailDate,\n    emailDateTime: emailDateTime ? emailDateTime.toISOString() : null,\n    emailBody: emailBody,\n    receivedAt: new Date().toISOString(),\n    passedDateFilter: true,\n    cutoffDate: cutoffDate.toISOString(),\n    headers: headers,\n    originalEmailData: emailData\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        -270
+      ],
+      "id": "e61cad25-5691-46a4-bee9-9be8264e20b0",
+      "name": "Prepare Email Data"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-NANO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.emailBody }}"
+            },
+            {
+              "content": "<system prompt>\nYOU ARE A TARGETED EMAIL PARSING AGENT THAT EXTRACTS AND RETURNS **EXACTLY THREE FIELDS** IN CLEAN JSON FORMAT:  \n1. `email` – the customer’s email address  \n2. `name` – the customer’s full name  \n3. `message` – the actual support message content (in English, exactly as written)  \n\n<instructions>\n- USE THIS REGEX TO EXTRACT NAME AND EMAIL: `by\\s+([a-zA-Z\\s.'-]+)\\s+\\(([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\\)`\n- IDENTIFY THE MESSAGE BY FINDING `\"Message:\"` AND RETURNING ALL TEXT AFTER IT\n- OUTPUT A VALID JSON OBJECT WITH KEYS: `email`, `name`, `message`\n\n</instructions>\n\n<what not to do>\n- DO NOT INCLUDE ADDITIONAL FIELDS OR METADATA  \n- DO NOT WRAP THE JSON IN ARRAYS OR STRINGS  \n- DO NOT OMIT ANY FIELD — RETURN EMPTY STRING IF NOT FOUND  \n- NEVER TRANSLATE, MODIFY, OR FORMAT THE MESSAGE TEXT  \n- DO NOT LOG OR COMMENT ANYTHING OUTSIDE THE JSON STRUCTURE\n\n</what not to do>\n\n<High Quality Few-Shot Example>\n\n<INPUT>\nNew support ticket submitted from https://management.connected-performance.com  \nby Mikey Wood (cdub1008@yahoo.com)  \nMessage: I goofed up and put my sons app on my phone. I need to get it put on my sons phone.\n</INPUT>\n\n<OUTPUT>\n{\n  \"email\": \"cdub1008@yahoo.com\",\n  \"name\": \"Mikey Wood\",\n  \"message\": \"I goofed up and put my sons app on my phone. I need to get it put on my sons phone.\"\n}\n</OUTPUT>\n\n</system prompt>\n",
+              "role": "system"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        700,
+        -370
+      ],
+      "id": "961ef282-4e3b-4f56-b108-8ceccbb10781",
+      "name": "OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "id": "EDHJocg9Y1w1BSF2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=subject:(\"New support ticket\") is:unread after:{{ new Date(Date.now() - 3 * 86400000).getFullYear() + '/' + (new Date(Date.now() - 3 * 86400000).getMonth() + 1) + '/' + new Date(Date.now() - 3 * 86400000).getDate() }} from:me"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "df4e14df-a7ee-4de6-92c8-21a0e441f07d",
+      "name": "Gmail HTTP Request1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -400,
+        -270
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "95IHUKq7gelP12du",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate a random 5-digit ID\nconst generateId = () => {\n  return Math.floor(10000 + Math.random() * 90000).toString();\n};\n\n// Get current date in YYYY-MM-DD format\nconst today = new Date().toISOString().split('T')[0];\n\n// Get email from trigger\nconst emailFrom = $input.first().json.from;\n\n// Return the data to be added to Google Sheets\nreturn {\n  json: {\n    email: emailFrom,\n    id: generateId(),\n    date: today,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "3385fe60-f15e-4538-b62a-d171782e10d0",
+      "name": "Generate 5-Digit ID1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1076,
+        -370
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ok18KU08FQWfTtwGbyZj5B_RRIir0Qd4O-FOTndB7nk",
+          "mode": "list",
+          "cachedResultName": "Ticket Processor",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ok18KU08FQWfTtwGbyZj5B_RRIir0Qd4O-FOTndB7nk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ok18KU08FQWfTtwGbyZj5B_RRIir0Qd4O-FOTndB7nk/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $json.id }}",
+            "Email": "={{ $('OpenAI1').item.json.message.content.email }}",
+            "Name ": "={{ $('OpenAI1').item.json.message.content.name }}",
+            "Message": "={{ $('OpenAI1').item.json.message.content.message }}",
+            "Date Time": "={{(() => {\n  const now = new Date(); // $now is equivalent to new Date()\n  const estOffsetMs = -5 * 60 * 60 * 1000; // EST offset = UTC-5\n  const estDate = new Date(now.getTime() + estOffsetMs);\n\n  const day = String(estDate.getUTCDate()).padStart(2, '0');\n  const month = String(estDate.getUTCMonth() + 1).padStart(2, '0');\n  const year = estDate.getUTCFullYear();\n\n  const hours = String(estDate.getUTCHours()).padStart(2, '0');\n  const minutes = String(estDate.getUTCMinutes()).padStart(2, '0');\n  const seconds = String(estDate.getUTCSeconds()).padStart(2, '0');\n\n  return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;\n})()}}\n"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Name ",
+              "displayName": "Name ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Time",
+              "displayName": "Date Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "5ad06bbf-341b-493f-804d-70e0ceb338fc",
+      "name": "Save to Google Sheets1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1296,
+        -370
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KN8jDHtvfxDh9nLi",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $('OpenAI1').item.json.message.content.email }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        1516,
+        -370
+      ],
+      "id": "30a888c4-68f7-4aa1-8781-29bac80563d1",
+      "name": "Remove Duplicates"
+    },
+    {
+      "parameters": {
+        "amount": 24,
+        "unit": "hours"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3984,
+        -120
+      ],
+      "id": "4a1307a5-3254-49fb-9e9f-e69831d4ee58",
+      "name": "Wait",
+      "webhookId": "1bb230aa-f616-498b-9fce-eea77ade502c"
+    },
+    {
+      "parameters": {
+        "operation": "clearDeduplicationHistory",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        4204,
+        -120
+      ],
+      "id": "c0e2c492-c2ca-4714-aa57-85d70e509a84",
+      "name": "Remove Duplicates1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Support AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Set post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Support AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Knowledge Base": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Company Knowledge Base",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack1": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack2": {
+      "main": [
+        [
+          {
+            "node": "Slack1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revision Agent": {
+      "main": [
+        [
+          {
+            "node": "Set post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set post": {
+      "main": [
+        [
+          {
+            "node": "Slack2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Support AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Revision Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Date Approved": {
+      "main": [
+        [
+          {
+            "node": "OpenAI1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Date Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gmail HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Message List": {
+      "main": [
+        [
+          {
+            "node": "Get Full Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Full Email Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Data": {
+      "main": [
+        [
+          {
+            "node": "Filter Date Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI1": {
+      "main": [
+        [
+          {
+            "node": "Generate 5-Digit ID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Process Message List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate 5-Digit ID1": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheets1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Google Sheets1": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Support AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Response": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "672681b1-ce6d-426f-b65d-69ee75cddf66",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d98b2a7345f04ac9ee9be50d5c87791438883509b42298fe26936bd77b5d63e5"
+  },
+  "id": "ymuea5Y49nSxJR4Z",
+  "tags": []
+}
