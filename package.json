@@ -1,12 +1,22 @@
 {
-  "name": "ai-cmo",
+  "name": "customer-support-ai-agent",
   "version": "1.0.0",
   "private": true,
-  "dependencies": {
-    "express": "^4.19.2"
-  },
+  "description": "Customer Support AI Agent (Express + Slack + Gmail + OpenAI)",
+  "engines": { "node": ">=20" },
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^118.0.0",
+    "openai": "^4.20.1",
+    "@slack/web-api": "^6.9.0",
+    "axios": "^1.6.0",
+    "nodemailer": "^6.9.7",
+    "dotenv": "^16.3.1"
   }
 }
+
 
