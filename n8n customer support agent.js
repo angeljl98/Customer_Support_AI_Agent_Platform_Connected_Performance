@@ -171,8 +171,8 @@ class CustomerSupportAgent {
         await this.sendGmailResponse(ticket, aiResponse);
       }
 
-      // 5) Always notify Slack (with preview)
-      await this.notifySlackChannel(ticket, aiResponse);
+      // 5) Always notify Slack (with preview + full response in thread)
+      const slackInfo = await this.notifySlackChannel(ticket, aiResponse);
 
       // 6) Update KB/logging placeholder
       await this.updateKnowledgeBase(ticket, aiResponse);
@@ -187,12 +187,13 @@ class CustomerSupportAgent {
           subject: ticket?.subject || null,
           customer: {
             name: ticket?.customer?.name || null,
-            email: ticket?.customer?.email || null
+            email: ticket?.customer?.email || null,
           },
           message_preview: (((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)),
           response_preview: (aiResponse || '').slice(0, 180),
           flags: { skip_email: skipEmail, skip_ai: skipAI, has_draft: !!draftText }
-        }
+        },
+        slack: slackInfo || null
       };
     } catch (error) {
       console.error('Error processing ticket:', error);
@@ -219,10 +220,7 @@ class CustomerSupportAgent {
         requestBody: {
           requests: [
             {
-              insertText: {
-                location: { index: 1 },
-                text: content,
-              },
+              insertText: { location: { index: 1 }, text: content },
             },
           ],
         },
@@ -344,10 +342,21 @@ class CustomerSupportAgent {
         };
       }
 
-      await this.slack.chat.postMessage({ channel: channelId, ...message });
+      // Post parent message
+      const post = await this.slack.chat.postMessage({ channel: channelId, ...message });
+      const threadTs = post.ts || post.message?.ts;
+
+      // If we have a full response, post it in the thread as well
+      if (!error && response) {
+        const full = `*Full AI Response:*\n\n\`\`\`\n${response}\n\`\`\``;
+        await this.slack.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: full });
+      }
+
       console.log('Slack notification sent');
+      return { channel: channelId, ts: threadTs };
     } catch (err) {
       console.error('Error sending Slack notification:', err);
+      return null;
     }
   }
 
@@ -398,6 +407,7 @@ if (require.main === module) {
 module.exports = CustomerSupportAgent;
 
 
+
 // Example .env file structure:
 /*
 OPENAI_API_KEY=your_openai_api_key
@@ -424,6 +434,7 @@ GMAIL_USER=support@yourcompany.com
 }
 
 */
+
 
 
 
