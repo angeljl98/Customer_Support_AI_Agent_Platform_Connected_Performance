@@ -182,6 +182,17 @@ class CustomerSupportAgent {
         ticketId: ticket?.id || null,
         used_ai: !skipAI && !draftText,
         emailed: !skipEmail,
+        summary: {
+          source: ticket?.source || null,
+          subject: ticket?.subject || null,
+          customer: {
+            name: ticket?.customer?.name || null,
+            email: ticket?.customer?.email || null
+          },
+          message_preview: (((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)),
+          response_preview: (aiResponse || '').slice(0, 180),
+          flags: { skip_email: skipEmail, skip_ai: skipAI, has_draft: !!draftText }
+        }
       };
     } catch (error) {
       console.error('Error processing ticket:', error);
@@ -386,6 +397,7 @@ if (require.main === module) {
 
 module.exports = CustomerSupportAgent;
 
+
 // Example .env file structure:
 /*
 OPENAI_API_KEY=your_openai_api_key
@@ -412,5 +424,6 @@ GMAIL_USER=support@yourcompany.com
 }
 
 */
+
 
 
