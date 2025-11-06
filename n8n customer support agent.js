@@ -384,7 +384,7 @@ if (require.main === module) {
   agent.start(PORT);
 }
 
-module.exports = CustomerS
+module.exports = CustomerSupportAgent;
 
 // Example .env file structure:
 /*
@@ -412,4 +412,5 @@ GMAIL_USER=support@yourcompany.com
 }
 
 */
+
 
