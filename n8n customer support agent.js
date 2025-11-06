@@ -15,10 +15,7 @@ class CustomerSupportAgent {
     this.app.use(express.json());
 
     // Initialize API clients
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
     this.gmail = null;
@@ -28,10 +25,19 @@ class CustomerSupportAgent {
     this.setupRoutes();
   }
 
+  // === Option B: allow GOOGLE_SERVICE_ACCOUNT_KEY to contain JSON ===
   async initializeGoogleServices() {
     try {
+      let keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY; // may be a PATH or raw JSON
+      if (keyFile && keyFile.trim().startsWith('{')) {
+        const fs = require('fs');
+        const p = '/tmp/google-sa.json';
+        fs.writeFileSync(p, keyFile);
+        keyFile = p;
+      }
+
       const auth = new google.auth.GoogleAuth({
-        keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY, // ruta al JSON (Render: Secret File)
+        keyFile, // now either a path or /tmp file if JSON was provided
         scopes: [
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/documents',
@@ -46,7 +52,7 @@ class CustomerSupportAgent {
   }
 
   setupRoutes() {
-    // Health interno (para Render/monitoreo)
+    // Health (for Render/monitoring)
     this.app.get('/health', (_req, res) => res.send('ok'));
 
     // HelpScout webhook endpoint
@@ -60,7 +66,7 @@ class CustomerSupportAgent {
       }
     });
 
-    // Gmail webhook endpoint (requiere Gmail Push notifications setup)
+    // Gmail webhook endpoint (requires Gmail Push notifications setup)
     this.app.post('/webhook/gmail', async (req, res) => {
       try {
         await this.handleGmailMessage(req.body);
@@ -71,7 +77,7 @@ class CustomerSupportAgent {
       }
     });
 
-    // Manual processing endpoint (con flags y draft)
+    // Manual processing endpoint (supports flags and draft)
     this.app.post('/process-ticket', async (req, res) => {
       try {
         const body = req.body || {};
@@ -91,7 +97,6 @@ class CustomerSupportAgent {
   async handleHelpScoutTicket(webhookData) {
     console.log('Processing HelpScout ticket:', webhookData?.id);
 
-    // Extraer ticket
     const ticket = {
       id: webhookData.id,
       subject: webhookData.subject,
@@ -109,12 +114,11 @@ class CustomerSupportAgent {
   async handleGmailMessage(pushData) {
     console.log('Processing Gmail message (push)');
 
-    // Nota: esta parte depende del formato real del push. Mantengo la lógica original.
     const message = JSON.parse(Buffer.from(pushData.message.data, 'base64').toString());
 
     const emailData = await this.gmail.users.messages.get({
       userId: 'me',
-      id: message.emailAddress, // en push real suele venir el messageId; este campo es orientativo
+      id: message.emailAddress, // NOTE: adjust to actual messageId for real Gmail push config
     });
 
     const headers = emailData.data.payload.headers || [];
@@ -145,13 +149,13 @@ class CustomerSupportAgent {
         hasDraft: !!draftText,
       });
 
-      // 1) Registrar ticket en Google Doc
+      // 1) Store ticket in Google Doc
       await this.storeTicketInDoc(ticket);
 
-      // 2) Contexto KB (placeholder)
+      // 2) Knowledge base context placeholder
       const context = await this.getKnowledgeBaseContext(ticket);
 
-      // 3) Generar respuesta (usa draft si viene; si skipAI=true y no hay draft, usa fallback)
+      // 3) Generate response (use draft if provided; if skipAI and no draft, use fallback)
       let aiResponse = draftText;
       if (!aiResponse) {
         if (!skipAI) {
@@ -162,15 +166,15 @@ class CustomerSupportAgent {
         }
       }
 
-      // 4) Enviar email SOLO si no pediste saltarlo
+      // 4) Send email only if not skipped
       if (!skipEmail) {
         await this.sendGmailResponse(ticket, aiResponse);
       }
 
-      // 5) Notificar a Slack SIEMPRE (muestra preview)
+      // 5) Always notify Slack (with preview)
       await this.notifySlackChannel(ticket, aiResponse);
 
-      // 6) Actualizar "KB" (placeholder)
+      // 6) Update KB/logging placeholder
       await this.updateKnowledgeBase(ticket, aiResponse);
 
       return {
@@ -181,9 +185,7 @@ class CustomerSupportAgent {
       };
     } catch (error) {
       console.error('Error processing ticket:', error);
-      try {
-        await this.notifySlackChannel(ticket, null, error);
-      } catch {}
+      try { await this.notifySlackChannel(ticket, null, error); } catch {}
       throw error;
     }
   }
@@ -221,7 +223,7 @@ class CustomerSupportAgent {
   }
 
   async getKnowledgeBaseContext(_ticket) {
-    // Placeholder: aquí conectarías tu KB real / RAG / Supabase / búsqueda restringida, etc.
+    // Placeholder: plug your real KB/RAG here
     return {
       commonIssues: [
         'Account setup and onboarding',
@@ -247,11 +249,7 @@ class CustomerSupportAgent {
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-4',
         messages: [
-          {
-            role: 'system',
-            content:
-              'You are a helpful customer support agent specializing in software platform assistance.',
-          },
+          { role: 'system', content: 'You are a helpful customer support agent specializing in software platform assistance.' },
           { role: 'user', content: prompt },
         ],
         max_tokens: 500,
@@ -260,13 +258,13 @@ class CustomerSupportAgent {
 
       const response = completion.choices?.[0]?.message?.content || '';
       console.log('AI response generated');
-      return response ||
-        'Thank you for contacting our support team. We\'ve received your inquiry and will respond shortly with a personalized solution.';
-    } catch (error) {
-      console.error('Error generating AI response:', error);
       return (
+        response ||
         "Thank you for contacting our support team. We've received your inquiry and will respond shortly with a personalized solution."
       );
+    } catch (error) {
+      console.error('Error generating AI response:', error);
+      return "Thank you for contacting our support team. We've received your inquiry and will respond shortly with a personalized solution.";
     }
   }
 
@@ -279,11 +277,7 @@ class CustomerSupportAgent {
         .replace(/\+/g, '-')
         .replace(/\//g, '_');
 
-      await this.gmail.users.messages.send({
-        userId: 'me',
-        requestBody: { raw: encodedEmail },
-      });
-
+      await this.gmail.users.messages.send({ userId: 'me', requestBody: { raw: encodedEmail } });
       console.log('Response sent via Gmail');
     } catch (error) {
       console.error('Error sending Gmail response:', error);
@@ -295,7 +289,6 @@ class CustomerSupportAgent {
 
     try {
       let message;
-
       if (error) {
         message = {
           text: `🚨 Error processing ticket ${ticket?.id}`,
@@ -321,10 +314,7 @@ class CustomerSupportAgent {
                 text: `*Automated Response Sent*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
               },
             },
-            {
-              type: 'section',
-              text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` },
-            },
+            { type: 'section', text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` } },
             ...(process.env.BASE_URL
               ? [
                   {
@@ -351,7 +341,6 @@ class CustomerSupportAgent {
   }
 
   async updateKnowledgeBase(ticket, response) {
-    // Placeholder de logging/KB
     const interaction = {
       timestamp: new Date().toISOString(),
       ticketId: ticket?.id,
@@ -380,23 +369,22 @@ class CustomerSupportAgent {
   start(port = 3000) {
     this.app.listen(port, () => {
       console.log(`Customer Support AI Agent running on port ${port}`);
-      console.log('Webhooks available at:');
-      console.log(`- Health: GET /health`);
-      console.log(`- HelpScout: POST /webhook/helpscout`);
-      console.log(`- Gmail: POST /webhook/gmail`);
-      console.log(`- Manual: POST /process-ticket`);
+      console.log('Endpoints:');
+      console.log('- Health: GET /health');
+      console.log('- HelpScout: POST /webhook/helpscout');
+      console.log('- Gmail: POST /webhook/gmail');
+      console.log('- Manual: POST /process-ticket');
     });
   }
 }
 
-// Configuration and startup (si se invoca directamente)
 if (require.main === module) {
   const agent = new CustomerSupportAgent();
   const PORT = process.env.PORT || 3000;
   agent.start(PORT);
 }
 
-module.exports = CustomerSupportAgent;
+module.exports = CustomerS
 
 // Example .env file structure:
 /*
@@ -424,3 +412,4 @@ GMAIL_USER=support@yourcompany.com
 }
 
 */
+
