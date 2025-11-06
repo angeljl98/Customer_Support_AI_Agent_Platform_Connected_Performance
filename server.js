@@ -1,11 +1,15 @@
-const express = require('express');
-const app = express();
+// server.js
+// Levanta la clase que ya define /process-ticket, /webhook/helpscout y /webhook/gmail
+const CustomerSupportAgent = require('./n8n customer support agent.js');
 
-app.use(express.json());
+// Instancia única y reutilizamos SU app de Express
+const agent = new CustomerSupportAgent();
+const app = agent.app;
 
-const PORT = process.env.PORT || 3000;
+// ====== Healthcheck (para Render) ======
+app.get('/health', (_req, res) => res.send('ok'));
 
-// Utilidad para enviar mensajes a Slack
+// ====== Utilidad de prueba: enviar mensaje a Slack ======
 async function postToSlack({ text, channel = process.env.SLACK_SUPPORT_CHANNEL_ID }) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !channel) throw new Error('Missing SLACK_BOT_TOKEN or SLACK_SUPPORT_CHANNEL_ID');
@@ -23,10 +27,7 @@ async function postToSlack({ text, channel = process.env.SLACK_SUPPORT_CHANNEL_I
   return data;
 }
 
-// Health
-app.get('/health', (_req, res) => res.send('ok'));
-
-// Test rápido: envía un mensaje al canal de soporte
+// ====== Rutas de prueba (opcionales, las conservamos) ======
 app.post('/test/slack', async (req, res) => {
   try {
     const text = req.body?.text || `Server alive ✅ ${new Date().toISOString()}`;
@@ -38,7 +39,6 @@ app.post('/test/slack', async (req, res) => {
   }
 });
 
-// Tu endpoint base para luego conectar la lógica real
 app.post('/cmocreate', async (req, res) => {
   try {
     const { taskType = 'post', content = '(sin contenido)' } = req.body || {};
@@ -50,4 +50,8 @@ app.post('/cmocreate', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log('Server listening on', PORT));
+// ====== Start ======
+const PORT = process.env.PORT || 3000;
+agent.start(PORT);
+console.log('Server listening on', PORT);
+
