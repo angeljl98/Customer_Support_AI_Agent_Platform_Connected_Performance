@@ -120,9 +120,9 @@
         "select": "channel",
         "channelId": {
           "__rl": true,
-          "value": "C095F2Y3L0Z",
-          "mode": "list",
-          "cachedResultName": "connect-support"
+          "value": "={{$env.SLACK_SUPPORT_CHANNEL_ID}}",
+          "mode": "id"
+
         },
         "message": "=Answer: {{ $('Set post').item.json.post }}",
         "responseType": "freeText",
@@ -183,9 +183,9 @@
         "select": "channel",
         "channelId": {
           "__rl": true,
-          "value": "C095F2Y3L0Z",
-          "mode": "list",
-          "cachedResultName": "connect-support"
+          "value": "={{$env.SLACK_SUPPORT_CHANNEL_ID}}",
+          "mode": "id"
+          
         },
         "text": "=Client Email: {{ $('OpenAI1').item.json.message.content.message }}",
         "otherOptions": {
