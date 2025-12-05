@@ -155,13 +155,12 @@ class CustomerSupportAgent {
       // 2) Knowledge base context placeholder
       const context = await this.getKnowledgeBaseContext(ticket);
 
-      // 3) Generate response (use draft if provided; if skipAI and no draft, use fallback)
+      // 3) Generate response (use draft if provided; if skipAI and no draft, use empty)
       let aiResponse = draftText;
       if (!aiResponse) {
         if (!skipAI) {
           aiResponse = await this.generateAIResponse(ticket, context);
         } else {
-          // Si se salta el AI, no generamos respuesta automática.
           aiResponse = '';
         }
       }
@@ -177,6 +176,10 @@ class CustomerSupportAgent {
       // 6) Update KB/logging placeholder
       await this.updateKnowledgeBase(ticket, aiResponse);
 
+      const rawCustomer = ticket?.customer || {};
+      const custName = rawCustomer.name || rawCustomer.Name || null;
+      const custEmail = rawCustomer.email || rawCustomer.Email || null;
+
       return {
         ok: true,
         ticketId: ticket?.id || null,
@@ -186,8 +189,8 @@ class CustomerSupportAgent {
           source: ticket?.source || null,
           subject: ticket?.subject || null,
           customer: {
-            name: ticket?.customer?.name || null,
-            email: ticket?.customer?.email || null,
+            name: custName,
+            email: custEmail,
           },
           message_preview: (
             ((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)
@@ -269,7 +272,7 @@ class CustomerSupportAgent {
 
       const response = (completion.choices?.[0]?.message?.content || '').trim();
       console.log('AI response generated');
-      // IMPORTANTE: ya no devolvemos el texto genérico de "Thank you for contacting..."
+      // No fallback genérico
       return response;
     } catch (error) {
       console.error('Error generating AI response:', error);
@@ -303,6 +306,20 @@ class CustomerSupportAgent {
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
 
+    // Normalizamos los campos por si vienen como Name/Email o name/email
+    const rawCustomer = ticket?.customer || {};
+    const custName = rawCustomer.name || rawCustomer.Name || '';
+    const custEmail = rawCustomer.email || rawCustomer.Email || '';
+
+    let customerLabel = 'Unknown customer';
+    if (custName && custEmail) {
+      customerLabel = `${custName} <${custEmail}>`;
+    } else if (custEmail) {
+      customerLabel = custEmail;
+    } else if (custName) {
+      customerLabel = custName;
+    }
+
     try {
       let message;
       if (error) {
@@ -313,7 +330,12 @@ class CustomerSupportAgent {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*Error Processing Ticket*\n*ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Error:* ${error?.message || error}`,
+                text:
+                  `*Error Processing Ticket*\n` +
+                  `*ID:* ${ticket?.id}\n` +
+                  `*Customer:* ${customerLabel}\n` +
+                  `*Subject:* ${ticket?.subject}\n` +
+                  `*Error:* ${error?.message || error}`,
               },
             },
           ],
@@ -330,7 +352,12 @@ class CustomerSupportAgent {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*New Support Ticket*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
+                text:
+                  `*New Support Ticket*\n` +
+                  `*Ticket ID:* ${ticket?.id}\n` +
+                  `*Customer:* ${customerLabel}\n` +
+                  `*Subject:* ${ticket?.subject}\n` +
+                  `*Source:* ${ticket?.source}`,
               },
             },
             {
@@ -340,7 +367,7 @@ class CustomerSupportAgent {
                 text: `*Customer Message:*\n${customerMessage || '_No message body_'}`,
               },
             },
-            // IMPORTANTE: ya NO añadimos el bloque de botón "Review Full Response"
+            // Ya NO añadimos botón ni "Response Preview"
           ],
         };
       }
@@ -349,7 +376,7 @@ class CustomerSupportAgent {
       const post = await this.slack.chat.postMessage({ channel: channelId, ...message });
       const threadTs = post.ts || post.message?.ts;
 
-      // Si tenemos una respuesta de IA NO vacía, la publicamos en el hilo
+      // Si tenemos una respuesta de IA, la publicamos en el hilo
       if (!error && response && response.trim()) {
         const full = `*Full AI Response:*\n\n\`\`\`\n${response}\n\`\`\``;
         await this.slack.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: full });
@@ -434,4 +461,5 @@ GMAIL_USER=support@yourcompany.com
   }
 }
 */
+
 
