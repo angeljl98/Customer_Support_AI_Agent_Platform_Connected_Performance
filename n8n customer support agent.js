@@ -161,17 +161,17 @@ class CustomerSupportAgent {
         if (!skipAI) {
           aiResponse = await this.generateAIResponse(ticket, context);
         } else {
-          aiResponse =
-            'Thanks for reaching out! Our team has received your request and will follow up shortly with details.';
+          // Si se salta el AI, no generamos respuesta automática.
+          aiResponse = '';
         }
       }
 
-      // 4) Send email only if not skipped
+      // 4) Send email only if not skipped AND we actually have a response
       if (!skipEmail) {
         await this.sendGmailResponse(ticket, aiResponse);
       }
 
-      // 5) Always notify Slack (with preview + full response in thread)
+      // 5) Always notify Slack (with ticket info + optional full response in thread)
       const slackInfo = await this.notifySlackChannel(ticket, aiResponse);
 
       // 6) Update KB/logging placeholder
@@ -181,7 +181,7 @@ class CustomerSupportAgent {
         ok: true,
         ticketId: ticket?.id || null,
         used_ai: !skipAI && !draftText,
-        emailed: !skipEmail,
+        emailed: !skipEmail && !!(aiResponse && aiResponse.trim()),
         summary: {
           source: ticket?.source || null,
           subject: ticket?.subject || null,
@@ -189,7 +189,9 @@ class CustomerSupportAgent {
             name: ticket?.customer?.name || null,
             email: ticket?.customer?.email || null,
           },
-          message_preview: (((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)),
+          message_preview: (
+            ((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)
+          ),
           response_preview: (aiResponse || '').slice(0, 180),
           flags: { skip_email: skipEmail, skip_ai: skipAI, has_draft: !!draftText }
         },
@@ -265,20 +267,25 @@ class CustomerSupportAgent {
         temperature: 0.7,
       });
 
-      const response = completion.choices?.[0]?.message?.content || '';
+      const response = (completion.choices?.[0]?.message?.content || '').trim();
       console.log('AI response generated');
-      return (
-        response ||
-        "Thank you for contacting our support team. We've received your inquiry and will respond shortly with a personalized solution."
-      );
+      // IMPORTANTE: ya no devolvemos el texto genérico de "Thank you for contacting..."
+      return response;
     } catch (error) {
       console.error('Error generating AI response:', error);
-      return "Thank you for contacting our support team. We've received your inquiry and will respond shortly with a personalized solution.";
+      // Si falla el modelo, devolvemos vacío para NO mandar mensaje automático
+      return '';
     }
   }
 
   async sendGmailResponse(ticket, response) {
     try {
+      // Si no hay respuesta, no mandamos email
+      if (!response || !response.trim()) {
+        console.warn('No AI response available, skipping Gmail send.');
+        return;
+      }
+
       const emailContent = `To: ${ticket.customer?.email}\nSubject: Re: ${ticket.subject}\nContent-Type: text/plain; charset=utf-8\n\nHi ${ticket.customer?.name || ''},\n\n${response}\n\nBest regards,\nCustomer Support Team\n\n---\nThis is an automated response. If you need further assistance, please reply to this email.`;
 
       const encodedEmail = Buffer.from(emailContent)
@@ -312,32 +319,28 @@ class CustomerSupportAgent {
           ],
         };
       } else {
-        const preview = (response || '').slice(0, 200) + ((response || '').length > 200 ? '...' : '');
+        const customerMessage = (
+          (ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + ''
+        ).slice(0, 500);
+
         message = {
-          text: `✅ Automated response ${ticket?.id ? `for ticket ${ticket.id}` : ''}`,
+          text: `New support ticket${ticket?.id ? ` ${ticket.id}` : ''}`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*Automated Response Sent*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
+                text: `*New Support Ticket*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
               },
             },
-            { type: 'section', text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` } },
-            ...(process.env.BASE_URL
-              ? [
-                  {
-                    type: 'actions',
-                    elements: [
-                      {
-                        type: 'button',
-                        text: { type: 'plain_text', text: 'Review Full Response' },
-                        url: `${process.env.BASE_URL}/ticket/${ticket?.id}`,
-                      },
-                    ],
-                  },
-                ]
-              : []),
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `*Customer Message:*\n${customerMessage || '_No message body_'}`,
+              },
+            },
+            // IMPORTANTE: ya NO añadimos el bloque de botón "Review Full Response"
           ],
         };
       }
@@ -346,8 +349,8 @@ class CustomerSupportAgent {
       const post = await this.slack.chat.postMessage({ channel: channelId, ...message });
       const threadTs = post.ts || post.message?.ts;
 
-      // If we have a full response, post it in the thread as well
-      if (!error && response) {
+      // Si tenemos una respuesta de IA NO vacía, la publicamos en el hilo
+      if (!error && response && response.trim()) {
         const full = `*Full AI Response:*\n\n\`\`\`\n${response}\n\`\`\``;
         await this.slack.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: full });
       }
@@ -406,8 +409,6 @@ if (require.main === module) {
 
 module.exports = CustomerSupportAgent;
 
-
-
 // Example .env file structure:
 /*
 OPENAI_API_KEY=your_openai_api_key
@@ -432,9 +433,5 @@ GMAIL_USER=support@yourcompany.com
     "dotenv": "^16.3.1"
   }
 }
-
 */
-
-
-
 
