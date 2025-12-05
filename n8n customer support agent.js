@@ -25,7 +25,7 @@ class CustomerSupportAgent {
     this.setupRoutes();
   }
 
-  // === Option B: allow GOOGLE_SERVICE_ACCOUNT_KEY to contain JSON ===
+  // === Allow GOOGLE_SERVICE_ACCOUNT_KEY to contain JSON or path ===
   async initializeGoogleServices() {
     try {
       let keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY; // may be a PATH or raw JSON
@@ -37,7 +37,7 @@ class CustomerSupportAgent {
       }
 
       const auth = new google.auth.GoogleAuth({
-        keyFile, // now either a path or /tmp file if JSON was provided
+        keyFile,
         scopes: [
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/documents',
@@ -94,6 +94,44 @@ class CustomerSupportAgent {
     });
   }
 
+  // ---------- Helper: normalize customer data (name + email) ----------
+
+  normalizeCustomer(ticket) {
+    const t = ticket || {};
+    let c = t.customer || t.Customer || {};
+
+    // If customer comes as JSON string, try to parse it
+    if (typeof c === 'string') {
+      try {
+        c = JSON.parse(c);
+      } catch (e) {
+        c = {};
+      }
+    }
+
+    const name =
+      c.name ||
+      c.Name ||
+      t.customer_name ||
+      t.CustomerName ||
+      t.Name ||
+      t.name ||
+      '';
+
+    const email =
+      c.email ||
+      c.Email ||
+      t.customer_email ||
+      t.CustomerEmail ||
+      t.Email ||
+      t.email ||
+      '';
+
+    return { name: name || '', email: email || '' };
+  }
+
+  // ---------- Webhook handlers ----------
+
   async handleHelpScoutTicket(webhookData) {
     console.log('Processing HelpScout ticket:', webhookData?.id);
 
@@ -139,6 +177,8 @@ class CustomerSupportAgent {
     return await this.processTicket(ticket);
   }
 
+  // ---------- Core pipeline ----------
+
   async processTicket(ticket, opts = {}) {
     const { skipEmail = false, skipAI = false, draftText = null } = opts;
 
@@ -149,17 +189,19 @@ class CustomerSupportAgent {
         hasDraft: !!draftText,
       });
 
+      const customer = this.normalizeCustomer(ticket);
+
       // 1) Store ticket in Google Doc
-      await this.storeTicketInDoc(ticket);
+      await this.storeTicketInDoc(ticket, customer);
 
       // 2) Knowledge base context placeholder
       const context = await this.getKnowledgeBaseContext(ticket);
 
-      // 3) Generate response (use draft if provided; if skipAI and no draft, use empty)
+      // 3) Generate response (use draft if provided; if skipAI and no draft, response = '')
       let aiResponse = draftText;
       if (!aiResponse) {
         if (!skipAI) {
-          aiResponse = await this.generateAIResponse(ticket, context);
+          aiResponse = await this.generateAIResponse(ticket, customer, context);
         } else {
           aiResponse = '';
         }
@@ -167,18 +209,14 @@ class CustomerSupportAgent {
 
       // 4) Send email only if not skipped AND we actually have a response
       if (!skipEmail) {
-        await this.sendGmailResponse(ticket, aiResponse);
+        await this.sendGmailResponse(ticket, customer, aiResponse);
       }
 
-      // 5) Always notify Slack (with ticket info + optional full response in thread)
-      const slackInfo = await this.notifySlackChannel(ticket, aiResponse);
+      // 5) Always notify Slack (ticket info + optional full response in thread)
+      const slackInfo = await this.notifySlackChannel(ticket, customer, aiResponse);
 
       // 6) Update KB/logging placeholder
       await this.updateKnowledgeBase(ticket, aiResponse);
-
-      const rawCustomer = ticket?.customer || {};
-      const custName = rawCustomer.name || rawCustomer.Name || null;
-      const custEmail = rawCustomer.email || rawCustomer.Email || null;
 
       return {
         ok: true,
@@ -188,26 +226,27 @@ class CustomerSupportAgent {
         summary: {
           source: ticket?.source || null,
           subject: ticket?.subject || null,
-          customer: {
-            name: custName,
-            email: custEmail,
-          },
+          customer,
           message_preview: (
             ((ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + '').slice(0, 180)
           ),
           response_preview: (aiResponse || '').slice(0, 180),
-          flags: { skip_email: skipEmail, skip_ai: skipAI, has_draft: !!draftText }
+          flags: { skip_email: skipEmail, skip_ai: skipAI, has_draft: !!draftText },
         },
-        slack: slackInfo || null
+        slack: slackInfo || null,
       };
     } catch (error) {
       console.error('Error processing ticket:', error);
-      try { await this.notifySlackChannel(ticket, null, error); } catch {}
+      try {
+        await this.notifySlackChannel(ticket, this.normalizeCustomer(ticket), null, error);
+      } catch {}
       throw error;
     }
   }
 
-  async storeTicketInDoc(ticket) {
+  // ---------- Google Docs ----------
+
+  async storeTicketInDoc(ticket, customer) {
     const docId = process.env.GOOGLE_DOC_ID;
     if (!docId) {
       console.warn('GOOGLE_DOC_ID is not set; skipping doc write');
@@ -215,7 +254,11 @@ class CustomerSupportAgent {
     }
 
     const timestamp = new Date().toISOString();
-    const content = `\n---\nTicket ID: ${ticket.id}\nDate: ${timestamp}\nSource: ${ticket.source}\nCustomer: ${ticket.customer?.name} (${ticket.customer?.email})\nSubject: ${ticket.subject}\n\nMessages:\n${(ticket.messages || [])
+    const content = `\n---\nTicket ID: ${ticket.id}\nDate: ${timestamp}\nSource: ${
+      ticket.source
+    }\nCustomer: ${customer.name} (${customer.email})\nSubject: ${ticket.subject}\n\nMessages:\n${(
+      ticket.messages || []
+    )
       .map((msg) => `- ${msg.body || msg.text || 'No content'}`)
       .join('\n')}\n---\n\n`;
 
@@ -254,16 +297,42 @@ class CustomerSupportAgent {
     };
   }
 
-  async generateAIResponse(ticket, context) {
-    const prompt = `\nYou are a helpful customer support agent for our software platform. \n\nCustomer Information:\n- Name: ${ticket.customer?.name}\n- Email: ${ticket.customer?.email}\n- Subject: ${ticket.subject}\n\nCustomer Message:\n${(ticket.messages || [])
-      .map((msg) => msg.body || msg.text || 'No content')
-      .join('\n')}\n\nKnowledge Base Context:\n${JSON.stringify(context, null, 2)}\n\nPlease generate a helpful, professional response that:\n1. Addresses the customer's specific question or concern\n2. Provides step-by-step guidance when appropriate\n3. References relevant platform features or documentation\n4. Maintains a friendly, professional tone\n5. Offers additional help if needed\n\nResponse:`;
+  // ---------- OpenAI ----------
+
+  async generateAIResponse(ticket, customer, context) {
+    const prompt = `You are a helpful customer support agent for our software platform.
+
+Customer Information:
+- Name: ${customer.name}
+- Email: ${customer.email}
+- Subject: ${ticket.subject}
+
+Customer Message:
+${(ticket.messages || [])
+  .map((msg) => msg.body || msg.text || 'No content')
+  .join('\n')}
+
+Knowledge Base Context:
+${JSON.stringify(context, null, 2)}
+
+Please generate a helpful, professional response that:
+1. Addresses the customer's specific question or concern
+2. Provides step-by-step guidance when appropriate
+3. References relevant platform features or documentation
+4. Maintains a friendly, professional tone
+5. Offers additional help if needed
+
+Response:`;
 
     try {
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-4',
         messages: [
-          { role: 'system', content: 'You are a helpful customer support agent specializing in software platform assistance.' },
+          {
+            role: 'system',
+            content:
+              'You are a helpful customer support agent specializing in software platform assistance.',
+          },
           { role: 'user', content: prompt },
         ],
         max_tokens: 500,
@@ -281,7 +350,9 @@ class CustomerSupportAgent {
     }
   }
 
-  async sendGmailResponse(ticket, response) {
+  // ---------- Gmail ----------
+
+  async sendGmailResponse(ticket, customer, response) {
     try {
       // Si no hay respuesta, no mandamos email
       if (!response || !response.trim()) {
@@ -289,7 +360,19 @@ class CustomerSupportAgent {
         return;
       }
 
-      const emailContent = `To: ${ticket.customer?.email}\nSubject: Re: ${ticket.subject}\nContent-Type: text/plain; charset=utf-8\n\nHi ${ticket.customer?.name || ''},\n\n${response}\n\nBest regards,\nCustomer Support Team\n\n---\nThis is an automated response. If you need further assistance, please reply to this email.`;
+      const emailContent = `To: ${customer.email}
+Subject: Re: ${ticket.subject}
+Content-Type: text/plain; charset=utf-8
+
+Hi ${customer.name || ''},
+
+${response}
+
+Best regards,
+Customer Support Team
+
+---
+This is an automated response. If you need further assistance, please reply to this email.`;
 
       const encodedEmail = Buffer.from(emailContent)
         .toString('base64')
@@ -303,22 +386,22 @@ class CustomerSupportAgent {
     }
   }
 
-  async notifySlackChannel(ticket, response, error = null) {
+  // ---------- Slack ----------
+
+  async notifySlackChannel(ticket, customer, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
 
-    // Normalizamos los campos por si vienen como Name/Email o name/email
-    const rawCustomer = ticket?.customer || {};
-    const custName = rawCustomer.name || rawCustomer.Name || '';
-    const custEmail = rawCustomer.email || rawCustomer.Email || '';
-
-    let customerLabel = 'Unknown customer';
-    if (custName && custEmail) {
-      customerLabel = `${custName} <${custEmail}>`;
-    } else if (custEmail) {
-      customerLabel = custEmail;
-    } else if (custName) {
-      customerLabel = custName;
+    // Construimos líneas Customer + Email
+    let customerLine;
+    if (customer.name) {
+      customerLine = `*Customer:* ${customer.name}`;
+    } else if (customer.email) {
+      customerLine = `*Customer:* ${customer.email}`;
+    } else {
+      customerLine = '*Customer:* Unknown customer';
     }
+
+    const emailLine = customer.email ? `\n*Email:* ${customer.email}` : '';
 
     try {
       let message;
@@ -332,8 +415,8 @@ class CustomerSupportAgent {
                 type: 'mrkdwn',
                 text:
                   `*Error Processing Ticket*\n` +
-                  `*ID:* ${ticket?.id}\n` +
-                  `*Customer:* ${customerLabel}\n` +
+                  `*Ticket ID:* ${ticket?.id}\n` +
+                  `${customerLine}${emailLine}\n` +
                   `*Subject:* ${ticket?.subject}\n` +
                   `*Error:* ${error?.message || error}`,
               },
@@ -355,7 +438,7 @@ class CustomerSupportAgent {
                 text:
                   `*New Support Ticket*\n` +
                   `*Ticket ID:* ${ticket?.id}\n` +
-                  `*Customer:* ${customerLabel}\n` +
+                  `${customerLine}${emailLine}\n` +
                   `*Subject:* ${ticket?.subject}\n` +
                   `*Source:* ${ticket?.source}`,
               },
@@ -367,7 +450,7 @@ class CustomerSupportAgent {
                 text: `*Customer Message:*\n${customerMessage || '_No message body_'}`,
               },
             },
-            // Ya NO añadimos botón ni "Response Preview"
+            // Sin botón ni "Response Preview"
           ],
         };
       }
@@ -376,7 +459,7 @@ class CustomerSupportAgent {
       const post = await this.slack.chat.postMessage({ channel: channelId, ...message });
       const threadTs = post.ts || post.message?.ts;
 
-      // Si tenemos una respuesta de IA, la publicamos en el hilo
+      // Si tenemos una respuesta de IA NO vacía, la publicamos en el hilo
       if (!error && response && response.trim()) {
         const full = `*Full AI Response:*\n\n\`\`\`\n${response}\n\`\`\``;
         await this.slack.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: full });
@@ -390,18 +473,24 @@ class CustomerSupportAgent {
     }
   }
 
+  // ---------- KB logging ----------
+
   async updateKnowledgeBase(ticket, response) {
+    const customer = this.normalizeCustomer(ticket);
+
     const interaction = {
       timestamp: new Date().toISOString(),
       ticketId: ticket?.id,
       customerQuery: (ticket?.messages || []).map((m) => m.body || m.text).join(' '),
       aiResponse: response,
-      customerEmail: ticket?.customer?.email,
+      customerEmail: customer.email,
       subject: ticket?.subject,
       source: ticket?.source,
     };
     console.log('Knowledge base updated with interaction:', interaction.ticketId);
   }
+
+  // ---------- Utils ----------
 
   extractEmailBody(payload) {
     if (payload?.parts) {
@@ -461,5 +550,3 @@ GMAIL_USER=support@yourcompany.com
   }
 }
 */
-
-
