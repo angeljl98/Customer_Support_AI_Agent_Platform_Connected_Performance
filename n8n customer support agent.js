@@ -1,4 +1,4 @@
-// Customer Support AI Agent
+// Customer Support AI Agent Stable version
 // Integrates HelpScout, Gmail, Google Docs, OpenAI GPT, and Slack
 
 const express = require('express');
@@ -526,3 +526,4 @@ if (require.main === module) {
 }
 
 module.exports = CustomerSupportAgent;
+
