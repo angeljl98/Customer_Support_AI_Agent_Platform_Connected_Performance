@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const { WebClient } = require('@slack/web-api');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
-const { URLSearchParams } = require('url'); // para construir URLs
+const { URLSearchParams } = require('url');
 require('dotenv').config();
 
 class CustomerSupportAgent {
@@ -26,7 +26,7 @@ class CustomerSupportAgent {
     this.setupRoutes();
   }
 
-  // === Option B: allow GOOGLE_SERVICE_ACCOUNT_KEY to contain JSON ===
+  // === Allow GOOGLE_SERVICE_ACCOUNT_KEY to be JSON or path ===
   async initializeGoogleServices() {
     try {
       let keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY; // may be a PATH or raw JSON
@@ -38,7 +38,7 @@ class CustomerSupportAgent {
       }
 
       const auth = new google.auth.GoogleAuth({
-        keyFile, // now either a path or /tmp file if JSON was provided
+        keyFile,
         scopes: [
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/documents',
@@ -172,7 +172,7 @@ class CustomerSupportAgent {
         await this.sendGmailResponse(ticket, aiResponse);
       }
 
-      // 5) Always notify Slack (with preview + full response in thread)
+      // 5) Notify Slack
       const slackInfo = await this.notifySlackChannel(ticket, aiResponse);
 
       // 6) Update KB/logging placeholder
@@ -211,9 +211,18 @@ class CustomerSupportAgent {
     }
 
     const timestamp = new Date().toISOString();
-    const content = `\n---\nTicket ID: ${ticket.id}\nDate: ${timestamp}\nSource: ${ticket.source}\nCustomer: ${ticket.customer?.name} (${ticket.customer?.email})\nSubject: ${ticket.subject}\n\nMessages:\n${(ticket.messages || [])
-      .map((msg) => `- ${msg.body || msg.text || 'No content'}`)
-      .join('\n')}\n---\n\n`;
+    const content =
+      '\n---\n' +
+      'Ticket ID: ' + ticket.id + '\n' +
+      'Date: ' + timestamp + '\n' +
+      'Source: ' + ticket.source + '\n' +
+      'Customer: ' + (ticket.customer?.name || '') + ' (' + (ticket.customer?.email || '') + ')\n' +
+      'Subject: ' + (ticket.subject || '') + '\n\n' +
+      'Messages:\n' +
+      (ticket.messages || [])
+        .map((msg) => '- ' + (msg.body || msg.text || 'No content'))
+        .join('\n') +
+      '\n---\n\n';
 
     try {
       await this.docs.documents.batchUpdate({
@@ -251,9 +260,24 @@ class CustomerSupportAgent {
   }
 
   async generateAIResponse(ticket, context) {
-    const prompt = `\nYou are a helpful customer support agent for our software platform. \n\nCustomer Information:\n- Name: ${ticket.customer?.name}\n- Email: ${ticket.customer?.email}\n- Subject: ${ticket.subject}\n\nCustomer Message:\n${(ticket.messages || [])
-      .map((msg) => msg.body || msg.text || 'No content')
-      .join('\n')}\n\nKnowledge Base Context:\n${JSON.stringify(context, null, 2)}\n\nPlease generate a helpful, professional response that:\n1. Addresses the customer's specific question or concern\n2. Provides step-by-step guidance when appropriate\n3. References relevant platform features or documentation\n4. Maintains a friendly, professional tone\n5. Offers additional help if needed\n\nResponse:`;
+    const prompt =
+      '\nYou are a helpful customer support agent for our software platform. \n\n' +
+      'Customer Information:\n' +
+      '- Name: ' + (ticket.customer?.name || '') + '\n' +
+      '- Email: ' + (ticket.customer?.email || '') + '\n' +
+      '- Subject: ' + (ticket.subject || '') + '\n\n' +
+      'Customer Message:\n' +
+      (ticket.messages || [])
+        .map((msg) => msg.body || msg.text || 'No content')
+        .join('\n') +
+      '\n\nKnowledge Base Context:\n' +
+      JSON.stringify(context, null, 2) +
+      '\n\nPlease generate a helpful, professional response that:\n' +
+      '1. Addresses the customer\'s specific question or concern\n' +
+      '2. Provides step-by-step guidance when appropriate\n' +
+      '3. References relevant platform features or documentation\n' +
+      '4. Maintains a friendly, professional tone\n' +
+      '5. Offers additional help if needed\n\nResponse:';
 
     try {
       const completion = await this.openai.chat.completions.create({
@@ -280,7 +304,14 @@ class CustomerSupportAgent {
 
   async sendGmailResponse(ticket, response) {
     try {
-      const emailContent = `To: ${ticket.customer?.email}\nSubject: Re: ${ticket.subject}\nContent-Type: text/plain; charset=utf-8\n\nHi ${ticket.customer?.name || ''},\n\n${response}\n\nBest regards,\nCustomer Support Team\n\n---\nThis is an automated response. If you need further assistance, please reply to this email.`;
+      const emailContent =
+        'To: ' + (ticket.customer?.email || '') + '\n' +
+        'Subject: Re: ' + (ticket.subject || '') + '\n' +
+        'Content-Type: text/plain; charset=utf-8\n\n' +
+        'Hi ' + (ticket.customer?.name || '') + ',\n\n' +
+        response +
+        '\n\nBest regards,\nCustomer Support Team\n\n' +
+        '---\nThis is an automated response. If you need further assistance, please reply to this email.';
 
       const encodedEmail = Buffer.from(emailContent)
         .toString('base64')
@@ -294,18 +325,17 @@ class CustomerSupportAgent {
     }
   }
 
-  // 🔹 Slack notification (Reply + Full Conversation)
+  // 🔹 Slack notification: Reply + Full Conversation (link buttons)
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
-    const replyFormBase = process.env.N8N_REPLY_FORM_URL;       // form de reply
-    const conversationBase = process.env.N8N_CONVERSATION_URL;  // webhook para ver conversación
+    const replyFormBase = process.env.N8N_REPLY_FORM_URL;
+    const conversationBase = process.env.N8N_CONVERSATION_URL;
 
-    // Mensaje original del cliente
     const customerMessageRaw =
       (ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') || '';
     const customerMessageShort = customerMessageRaw.slice(0, 500);
 
-    // URL del formulario de reply
+    // URL al formulario de reply (n8n)
     let replyUrl = null;
     if (replyFormBase) {
       const params = new URLSearchParams({
@@ -316,38 +346,43 @@ class CustomerSupportAgent {
         source: ticket?.source || '',
         customerMessage: customerMessageRaw.slice(0, 1000),
       });
-      replyUrl = `${replyFormBase}?${params.toString()}`;
+      replyUrl = replyFormBase + '?' + params.toString();
     }
 
-    // URL para ver la conversación completa (Google Sheets vía n8n)
+    // URL a la conversación completa (n8n Google Sheets)
     let conversationUrl = null;
     if (conversationBase && ticket?.id) {
       const sep = conversationBase.includes('?') ? '&' : '?';
-      conversationUrl = `${conversationBase}${sep}ticketId=${encodeURIComponent(
-        ticket.id
-      )}`;
+      conversationUrl = conversationBase + sep + 'ticketId=' + encodeURIComponent(ticket.id);
     }
+
+    console.log('Conversation URL for Slack:', conversationUrl);
 
     try {
       let message;
 
       if (error) {
-        // --- Mensaje de error ---
         message = {
-          text: `🚨 Error processing ticket ${ticket?.id}`,
+          text: '🚨 Error processing ticket ' + (ticket?.id || ''),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*Error Processing Ticket*\n*ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Error:* ${error?.message || error}`,
+                text:
+                  '*Error Processing Ticket*\n' +
+                  '*ID:* ' + (ticket?.id || '') + '\n' +
+                  '*Customer:* ' + (ticket?.customer?.name || '') +
+                  ' (' + (ticket?.customer?.email || '') + ')\n' +
+                  '*Subject:* ' + (ticket?.subject || '') + '\n' +
+                  '*Error:* ' + (error?.message || String(error)),
               },
             },
           ],
         };
       } else {
-        // --- Mensaje normal de ticket ---
-        const preview = (response || '').slice(0, 200) +
+        const preview =
+          (response || '').slice(0, 200) +
           ((response || '').length > 200 ? '...' : '');
 
         const blocks = [
@@ -356,18 +391,20 @@ class CustomerSupportAgent {
             text: {
               type: 'mrkdwn',
               text:
-                `*New Support Ticket*\n` +
-                `*Ticket ID:* ${ticket?.id}\n` +
-                `*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n` +
-                `*Subject:* ${ticket?.subject}\n` +
-                `*Source:* ${ticket?.source}`,
+                '*New Support Ticket*\n' +
+                '*Ticket ID:* ' + (ticket?.id || '') + '\n' +
+                '*Customer:* ' + (ticket?.customer?.name || '') +
+                ' (' + (ticket?.customer?.email || '') + ')\n' +
+                '*Subject:* ' + (ticket?.subject || '') + '\n' +
+                '*Source:* ' + (ticket?.source || ''),
             },
           },
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Customer Message:*\n${customerMessageShort || '_No message body_'}`,
+              text: '*Customer Message:*\n' +
+                    (customerMessageShort || '_No message body_'),
             },
           },
         ];
@@ -375,18 +412,28 @@ class CustomerSupportAgent {
         if (response) {
           blocks.push({
             type: 'section',
-            text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` },
+            text: { type: 'mrkdwn', text: '*Response Preview:*\n' + preview },
           });
         }
 
-        // Botones
+        // Link en texto, por si acaso
+        if (conversationUrl) {
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*Full Conversation:* <' + conversationUrl + '|Open in n8n>',
+            },
+          });
+        }
+
         const actionElements = [];
 
         if (replyUrl) {
           actionElements.push({
             type: 'button',
             text: { type: 'plain_text', text: 'Reply', emoji: true },
-            url: replyUrl,
+            url: replyUrl,           // 🔹 link button
           });
         }
 
@@ -394,7 +441,7 @@ class CustomerSupportAgent {
           actionElements.push({
             type: 'button',
             text: { type: 'plain_text', text: 'Full Conversation' },
-            url: conversationUrl,
+            url: conversationUrl,    // 🔹 link button
           });
         }
 
@@ -406,19 +453,24 @@ class CustomerSupportAgent {
         }
 
         message = {
-          text: `New support ticket${ticket?.id ? ` ${ticket.id}` : ''}`,
+          text: 'New support ticket ' + (ticket?.id || ''),
           blocks,
         };
       }
 
-      // Post parent message
       const post = await this.slack.chat.postMessage({ channel: channelId, ...message });
       const threadTs = post.ts || post.message?.ts;
 
-      // If we have a full response, post it in the thread as well
       if (!error && response) {
-        const full = `*Full AI Response:*\n\n\`\`\`\n${response}\n\`\`\``;
-        await this.slack.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: full });
+        const full =
+          '*Full AI Response:*\n\n```' +
+          response +
+          '```';
+        await this.slack.chat.postMessage({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: full,
+        });
       }
 
       console.log('Slack notification sent');
