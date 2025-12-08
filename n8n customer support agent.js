@@ -294,10 +294,15 @@ class CustomerSupportAgent {
     }
   }
 
-  // 🔹 AQUÍ está el cambio de formato para Slack
+  // 🔹 Slack notification (incluye URL al formulario con datos para prefill)
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
     const replyFormBase = process.env.N8N_REPLY_FORM_URL; // URL base del formulario de n8n
+
+    // Mensaje original del cliente (lo usamos para Slack y para el form)
+    const customerMessageRaw =
+      (ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') || '';
+    const customerMessageShort = customerMessageRaw.slice(0, 500);
 
     // Construimos la URL del formulario con parámetros del ticket
     let replyUrl = null;
@@ -308,6 +313,7 @@ class CustomerSupportAgent {
         email: ticket?.customer?.email || '',
         subject: ticket?.subject || '',
         source: ticket?.source || '',
+        customerMessage: customerMessageRaw.slice(0, 1000), // para prellenar Message si quieres
       });
       replyUrl = `${replyFormBase}?${params.toString()}`;
     }
@@ -331,16 +337,12 @@ class CustomerSupportAgent {
         };
       } else {
         // --- Mensaje normal de ticket ---
-        const customerMessage = (
-          (ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') + ''
-        ).slice(0, 500);
-
         const preview = (response || '').slice(0, 200) +
           ((response || '').length > 200 ? '...' : '');
 
         const blocks = [
           {
-            // 👇 Cambiamos el título a "New Support Ticket"
+            // Título "New Support Ticket"
             type: 'section',
             text: {
               type: 'mrkdwn',
@@ -353,11 +355,11 @@ class CustomerSupportAgent {
             },
           },
           {
-            // 👇 Nueva sección con el mensaje del cliente
+            // Sección con el mensaje del cliente
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Customer Message:*\n${customerMessage || '_No message body_'}`,
+              text: `*Customer Message:*\n${customerMessageShort || '_No message body_'}`,
             },
           },
         ];
