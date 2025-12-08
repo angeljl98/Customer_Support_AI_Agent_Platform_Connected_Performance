@@ -7,6 +7,7 @@ const OpenAI = require('openai');
 const { WebClient } = require('@slack/web-api');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const { URLSearchParams } = require('url'); // 👈 para construir la URL del formulario
 require('dotenv').config();
 
 class CustomerSupportAgent {
@@ -295,9 +296,24 @@ class CustomerSupportAgent {
 
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
+    const replyFormBase = process.env.N8N_REPLY_FORM_URL; // 👈 URL base del formulario de n8n
+
+    // Construimos la URL del formulario con parámetros del ticket
+    let replyUrl = null;
+    if (replyFormBase) {
+      const params = new URLSearchParams({
+        ticketId: (ticket?.id || '').toString(),
+        name: ticket?.customer?.name || '',
+        email: ticket?.customer?.email || '',
+        subject: ticket?.subject || '',
+        source: ticket?.source || '',
+      });
+      replyUrl = `${replyFormBase}?${params.toString()}`;
+    }
 
     try {
       let message;
+
       if (error) {
         message = {
           text: `🚨 Error processing ticket ${ticket?.id}`,
@@ -313,32 +329,51 @@ class CustomerSupportAgent {
         };
       } else {
         const preview = (response || '').slice(0, 200) + ((response || '').length > 200 ? '...' : '');
-        message = {
-          text: `✅ Automated response ${ticket?.id ? `for ticket ${ticket.id}` : ''}`,
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `*Automated Response Sent*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
-              },
+
+        // Construimos los bloques paso a paso
+        const blocks = [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Automated Response Sent*\n*Ticket ID:* ${ticket?.id}\n*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n*Subject:* ${ticket?.subject}\n*Source:* ${ticket?.source}`,
             },
-            { type: 'section', text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` } },
-            ...(process.env.BASE_URL
-              ? [
-                  {
-                    type: 'actions',
-                    elements: [
-                      {
-                        type: 'button',
-                        text: { type: 'plain_text', text: 'Review Full Response' },
-                        url: `${process.env.BASE_URL}/ticket/${ticket?.id}`,
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ],
+          },
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: `*Response Preview:*\n${preview}` },
+          },
+        ];
+
+        // Creamos el bloque de acciones (botones)
+        const actionElements = [];
+
+        if (replyUrl) {
+          actionElements.push({
+            type: 'button',
+            text: { type: 'plain_text', text: 'Reply', emoji: true },
+            url: replyUrl,
+          });
+        }
+
+        if (process.env.BASE_URL) {
+          actionElements.push({
+            type: 'button',
+            text: { type: 'plain_text', text: 'Review Full Response' },
+            url: `${process.env.BASE_URL}/ticket/${ticket?.id}`,
+          });
+        }
+
+        if (actionElements.length > 0) {
+          blocks.push({
+            type: 'actions',
+            elements: actionElements,
+          });
+        }
+
+        message = {
+          text: `✅ Automated response${ticket?.id ? ` for ticket ${ticket.id}` : ''}`,
+          blocks,
         };
       }
 
@@ -405,36 +440,3 @@ if (require.main === module) {
 }
 
 module.exports = CustomerSupportAgent;
-
-
-
-// Example .env file structure:
-/*
-OPENAI_API_KEY=your_openai_api_key
-SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
-SLACK_SUPPORT_CHANNEL_ID=C1234567890
-GOOGLE_SERVICE_ACCOUNT_KEY=path/to/service-account-key.json
-GOOGLE_DOC_ID=your_google_doc_id
-BASE_URL=https://your-domain.com
-GMAIL_USER=support@yourcompany.com
-*/
-
-// Package.json dependencies needed:
-/*
-{
-  "dependencies": {
-    "express": "^4.18.2",
-    "googleapis": "^118.0.0",
-    "openai": "^4.20.1",
-    "@slack/web-api": "^6.9.0",
-    "axios": "^1.6.0",
-    "nodemailer": "^6.9.7",
-    "dotenv": "^16.3.1"
-  }
-}
-
-*/
-
-
-
-
