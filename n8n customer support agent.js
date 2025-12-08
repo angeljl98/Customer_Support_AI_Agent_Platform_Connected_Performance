@@ -1,3 +1,4 @@
+// n8n customer support agent.js
 // Customer Support AI Agent
 // Integrates HelpScout, Gmail, Google Docs, OpenAI GPT, and Slack
 
@@ -5,8 +6,8 @@ const express = require('express');
 const { google } = require('googleapis');
 const OpenAI = require('openai');
 const { WebClient } = require('@slack/web-api');
-const axios = require('axios');       // por si lo necesitas en otros flujos
-const nodemailer = require('nodemailer'); // idem
+const axios = require('axios');            // por si lo necesitas más adelante
+const nodemailer = require('nodemailer');  // idem
 const { URLSearchParams } = require('url');
 require('dotenv').config();
 
@@ -14,7 +15,7 @@ class CustomerSupportAgent {
   constructor() {
     this.app = express();
     this.app.use(express.json());
-    // por si algún día quieres recibir form-data (ej. Slack legacy, etc.)
+    // Para cuerpos tipo application/x-www-form-urlencoded (por si acaso)
     this.app.use(express.urlencoded({ extended: true }));
 
     // Slack
@@ -422,7 +423,9 @@ This is an automated message from our support system. If you need further assist
 
   async notifySlackChannel(ticket, customer, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
-    const replyFormBase = process.env.N8N_REPLY_FORM_URL;
+    // acepta tanto N8N_REPLY_FORM_URL como N8BN_REPLY_FORM_URL (por si acaso)
+    const replyFormBase =
+      process.env.N8N_REPLY_FORM_URL || process.env.N8BN_REPLY_FORM_URL;
 
     let customerLine;
     if (customer.name) {
