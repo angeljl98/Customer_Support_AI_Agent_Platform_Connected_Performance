@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const { WebClient } = require('@slack/web-api');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
-const { URLSearchParams } = require('url'); // para construir la URL del formulario
+const { URLSearchParams } = require('url'); // para construir URLs
 require('dotenv').config();
 
 class CustomerSupportAgent {
@@ -294,17 +294,18 @@ class CustomerSupportAgent {
     }
   }
 
-  // 🔹 Slack notification (incluye URL al formulario con datos para prefill)
+  // 🔹 Slack notification (Reply + Full Conversation)
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
-    const replyFormBase = process.env.N8N_REPLY_FORM_URL; // URL base del formulario de n8n
+    const replyFormBase = process.env.N8N_REPLY_FORM_URL;       // form de reply
+    const conversationBase = process.env.N8N_CONVERSATION_URL;  // webhook para ver conversación
 
-    // Mensaje original del cliente (lo usamos para Slack y para el form)
+    // Mensaje original del cliente
     const customerMessageRaw =
       (ticket?.messages?.[0]?.body || ticket?.messages?.[0]?.text || '') || '';
     const customerMessageShort = customerMessageRaw.slice(0, 500);
 
-    // Construimos la URL del formulario con parámetros del ticket
+    // URL del formulario de reply
     let replyUrl = null;
     if (replyFormBase) {
       const params = new URLSearchParams({
@@ -313,9 +314,18 @@ class CustomerSupportAgent {
         email: ticket?.customer?.email || '',
         subject: ticket?.subject || '',
         source: ticket?.source || '',
-        customerMessage: customerMessageRaw.slice(0, 1000), // para prellenar Message si quieres
+        customerMessage: customerMessageRaw.slice(0, 1000),
       });
       replyUrl = `${replyFormBase}?${params.toString()}`;
+    }
+
+    // URL para ver la conversación completa (Google Sheets vía n8n)
+    let conversationUrl = null;
+    if (conversationBase && ticket?.id) {
+      const sep = conversationBase.includes('?') ? '&' : '?';
+      conversationUrl = `${conversationBase}${sep}ticketId=${encodeURIComponent(
+        ticket.id
+      )}`;
     }
 
     try {
@@ -342,7 +352,6 @@ class CustomerSupportAgent {
 
         const blocks = [
           {
-            // Título "New Support Ticket"
             type: 'section',
             text: {
               type: 'mrkdwn',
@@ -355,7 +364,6 @@ class CustomerSupportAgent {
             },
           },
           {
-            // Sección con el mensaje del cliente
             type: 'section',
             text: {
               type: 'mrkdwn',
@@ -364,7 +372,6 @@ class CustomerSupportAgent {
           },
         ];
 
-        // Preview de la respuesta de IA (si existe)
         if (response) {
           blocks.push({
             type: 'section',
@@ -372,7 +379,7 @@ class CustomerSupportAgent {
           });
         }
 
-        // Botones (Reply + Review Full Response si BASE_URL existe)
+        // Botones
         const actionElements = [];
 
         if (replyUrl) {
@@ -383,11 +390,11 @@ class CustomerSupportAgent {
           });
         }
 
-        if (process.env.BASE_URL) {
+        if (conversationUrl) {
           actionElements.push({
             type: 'button',
-            text: { type: 'plain_text', text: 'Review Full Response' },
-            url: `${process.env.BASE_URL}/ticket/${ticket?.id}`,
+            text: { type: 'plain_text', text: 'Full Conversation' },
+            url: conversationUrl,
           });
         }
 
