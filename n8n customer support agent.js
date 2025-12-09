@@ -150,33 +150,24 @@ class CustomerSupportAgent {
         hasDraft: !!draftText,
       });
 
-      const isN8n = ticket?.source === 'n8n';
-
-      // 1) Store ticket in Google Doc (esto ya existía)
+      // 1) Store ticket in Google Doc
       await this.storeTicketInDoc(ticket);
 
-      // 2) Knowledge base context (solo si vamos a usar IA del servidor)
-      let context = null;
-      if (!draftText && !skipAI && !isN8n) {
-        context = await this.getKnowledgeBaseContext(ticket);
-      }
+      // 2) Knowledge base context placeholder
+      const context = await this.getKnowledgeBaseContext(ticket);
 
-      // 3) Generate response:
-      //    - si viene draft desde n8n → usamos eso
-      //    - si viene de n8n SIN draft → NO llamamos a OpenAI (rápido)
-      //    - si viene de HelpScout / Gmail y no se pide skipAI → sí llamamos a OpenAI
+      // 3) Generate response (use draft if provided; if skipAI and no draft, use fallback)
       let aiResponse = draftText;
       if (!aiResponse) {
-        if (!skipAI && !isN8n) {
+        if (!skipAI) {
           aiResponse = await this.generateAIResponse(ticket, context);
         } else {
-          // Respuesta rápida estática (sin IA)
           aiResponse =
             'Thanks for reaching out! Our team has received your request and will follow up shortly with details.';
         }
       }
 
-      // 4) Send email only if not skipped (esto se mantiene igual)
+      // 4) Send email only if not skipped
       if (!skipEmail) {
         await this.sendGmailResponse(ticket, aiResponse);
       }
@@ -190,7 +181,7 @@ class CustomerSupportAgent {
       return {
         ok: true,
         ticketId: ticket?.id || null,
-        used_ai: !skipAI && !isN8n && !draftText,
+        used_ai: !skipAI && !draftText,
         emailed: !skipEmail,
         summary: {
           source: ticket?.source || null,
@@ -266,7 +257,7 @@ class CustomerSupportAgent {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini', // modelo rápido y disponible
+        model: 'gpt-4',
         messages: [
           { role: 'system', content: 'You are a helpful customer support agent specializing in software platform assistance.' },
           { role: 'user', content: prompt },
@@ -303,7 +294,6 @@ class CustomerSupportAgent {
     }
   }
 
-  // Slack notification: New Support Ticket + Reply & Full Conversation buttons
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
     const replyFormBase = process.env.N8N_REPLY_FORM_URL;
@@ -360,10 +350,7 @@ class CustomerSupportAgent {
         if (conversationBase && ticket?.id) {
           const sep = conversationBase.includes('?') ? '&' : '?';
           conversationUrl =
-            conversationBase +
-            sep +
-            'ticketId=' +
-            encodeURIComponent(ticket.id);
+            conversationBase + sep + 'ticketId=' + encodeURIComponent(ticket.id);
         }
 
         const preview =
