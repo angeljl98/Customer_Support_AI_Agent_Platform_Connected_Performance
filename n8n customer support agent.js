@@ -150,24 +150,33 @@ class CustomerSupportAgent {
         hasDraft: !!draftText,
       });
 
-      // 1) Store ticket in Google Doc
+      const isN8n = ticket?.source === 'n8n';
+
+      // 1) Store ticket in Google Doc (esto ya existía)
       await this.storeTicketInDoc(ticket);
 
-      // 2) Knowledge base context placeholder
-      const context = await this.getKnowledgeBaseContext(ticket);
+      // 2) Knowledge base context (solo si vamos a usar IA del servidor)
+      let context = null;
+      if (!draftText && !skipAI && !isN8n) {
+        context = await this.getKnowledgeBaseContext(ticket);
+      }
 
-      // 3) Generate response (use draft if provided; if skipAI and no draft, use fallback)
+      // 3) Generate response:
+      //    - si viene draft desde n8n → usamos eso
+      //    - si viene de n8n SIN draft → NO llamamos a OpenAI (rápido)
+      //    - si viene de HelpScout / Gmail y no se pide skipAI → sí llamamos a OpenAI
       let aiResponse = draftText;
       if (!aiResponse) {
-        if (!skipAI) {
+        if (!skipAI && !isN8n) {
           aiResponse = await this.generateAIResponse(ticket, context);
         } else {
+          // Respuesta rápida estática (sin IA)
           aiResponse =
             'Thanks for reaching out! Our team has received your request and will follow up shortly with details.';
         }
       }
 
-      // 4) Send email only if not skipped
+      // 4) Send email only if not skipped (esto se mantiene igual)
       if (!skipEmail) {
         await this.sendGmailResponse(ticket, aiResponse);
       }
@@ -181,7 +190,7 @@ class CustomerSupportAgent {
       return {
         ok: true,
         ticketId: ticket?.id || null,
-        used_ai: !skipAI && !draftText,
+        used_ai: !skipAI && !isN8n && !draftText,
         emailed: !skipEmail,
         summary: {
           source: ticket?.source || null,
@@ -257,7 +266,7 @@ class CustomerSupportAgent {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini', // modelo rápido y disponible
         messages: [
           { role: 'system', content: 'You are a helpful customer support agent specializing in software platform assistance.' },
           { role: 'user', content: prompt },
@@ -294,6 +303,7 @@ class CustomerSupportAgent {
     }
   }
 
+  // Slack notification: New Support Ticket + Reply & Full Conversation buttons
   async notifySlackChannel(ticket, response, error = null) {
     const channelId = process.env.SLACK_SUPPORT_CHANNEL_ID;
     const replyFormBase = process.env.N8N_REPLY_FORM_URL;
@@ -307,8 +317,9 @@ class CustomerSupportAgent {
       let message;
 
       if (error) {
+        // Error case
         message = {
-          text: `🚨 Error processing ticket ${ticket?.id}`,
+          text: `🚨 Error processing ticket ${ticket?.id || ''}`,
           blocks: [
             {
               type: 'section',
@@ -316,16 +327,16 @@ class CustomerSupportAgent {
                 type: 'mrkdwn',
                 text:
                   `*Error Processing Ticket*\n` +
-                  `*ID:* ${ticket?.id}\n` +
-                  `*Customer:* ${ticket?.customer?.name} (${ticket?.customer?.email})\n` +
-                  `*Subject:* ${ticket?.subject}\n` +
-                  `*Error:* ${error?.message || error}`,
+                  `*ID:* ${ticket?.id || ''}\n` +
+                  `*Customer:* ${ticket?.customer?.name || ''} (${ticket?.customer?.email || ''})\n` +
+                  `*Subject:* ${ticket?.subject || ''}\n` +
+                  `*Error:* ${error?.message || String(error)}`,
               },
             },
           ],
         };
       } else {
-        // Build Reply URL for n8n form (pre-fill fields, including Response with AI text)
+        // Build URLs for buttons
         let replyUrl = null;
         if (replyFormBase) {
           const params = new URLSearchParams({
@@ -337,6 +348,7 @@ class CustomerSupportAgent {
             customerMessage: customerMessageRaw.slice(0, 1000),
           });
 
+          // Enviamos también la respuesta (IA o estática) para el campo Response del form
           if (response) {
             params.append('Response', response.slice(0, 1500));
           }
@@ -344,13 +356,14 @@ class CustomerSupportAgent {
           replyUrl = `${replyFormBase}?${params.toString()}`;
         }
 
-        // Build "Full Conversation" URL (n8n webhook that shows ticket history)
         let conversationUrl = null;
         if (conversationBase && ticket?.id) {
           const sep = conversationBase.includes('?') ? '&' : '?';
-          conversationUrl = `${conversationBase}${sep}ticketId=${encodeURIComponent(
-            ticket.id,
-          )}`;
+          conversationUrl =
+            conversationBase +
+            sep +
+            'ticketId=' +
+            encodeURIComponent(ticket.id);
         }
 
         const preview =
@@ -363,8 +376,8 @@ class CustomerSupportAgent {
             text: {
               type: 'mrkdwn',
               text:
-                `*New Support Ticket*\n` +
-                `*Ticket ID:* ${ticket?.id}\n` +
+                '*New Support Ticket*\n' +
+                `*Ticket ID:* ${ticket?.id || ''}\n` +
                 `*Customer:* ${ticket?.customer?.name || ''}\n` +
                 `*Email:* ${ticket?.customer?.email || ''}\n` +
                 `*Subject:* ${ticket?.subject || ''}\n` +
@@ -376,7 +389,7 @@ class CustomerSupportAgent {
             text: {
               type: 'mrkdwn',
               text:
-                `*Customer Message:*\n` +
+                '*Customer Message:*\n' +
                 (customerMessageShort || '_No message body_'),
             },
           },
@@ -387,7 +400,7 @@ class CustomerSupportAgent {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Response Preview:*\n${preview}`,
+              text: '*Response Preview:*\n' + preview,
             },
           });
         }
@@ -415,7 +428,11 @@ class CustomerSupportAgent {
         if (conversationUrl) {
           actionElements.push({
             type: 'button',
-            text: { type: 'plain_text', text: 'Full Conversation' },
+            text: {
+              type: 'plain_text',
+              text: 'Full Conversation',
+              emoji: true,
+            },
             url: conversationUrl,
           });
         }
@@ -503,32 +520,3 @@ if (require.main === module) {
 }
 
 module.exports = CustomerSupportAgent;
-
-
-
-// Example .env file structure:
-/*
-OPENAI_API_KEY=your_openai_api_key
-SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
-SLACK_SUPPORT_CHANNEL_ID=C1234567890
-GOOGLE_SERVICE_ACCOUNT_KEY=path/to/service-account-key.json
-GOOGLE_DOC_ID=your_google_doc_id
-BASE_URL=https://your-domain.com
-GMAIL_USER=support@yourcompany.com
-*/
-
-// Package.json dependencies needed:
-/*
-{
-  "dependencies": {
-    "express": "^4.18.2",
-    "googleapis": "^118.0.0",
-    "openai": "^4.20.1",
-    "@slack/web-api": "^6.9.0",
-    "axios": "^1.6.0",
-    "nodemailer": "^6.9.7",
-    "dotenv": "^16.3.1"
-  }
-}
-
-*/
